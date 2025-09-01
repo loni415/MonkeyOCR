@@ -5,7 +5,7 @@ import time
 import argparse
 import sys
 import torch.distributed as dist
-from pdf2image import convert_from_path
+from magic_pdf.utils.load_image import pdf_to_images
 
 from magic_pdf.data.data_reader_writer import FileBasedDataWriter, FileBasedDataReader
 from magic_pdf.data.dataset import PymuDocDataset, ImageDataset, MultiFileDataset
@@ -229,9 +229,6 @@ def parse_multi_file_group(file_paths, output_dir, MonkeyOCR_model, base_folder_
 
     infer_result = ds.apply(doc_analyze_llm, MonkeyOCR_model=MonkeyOCR_model, split_files=True, split_pages=split_pages, pred_abandon=pred_abandon)
 
-    parsing_time = time.time() - start_time
-    print(f"Parsing time: {parsing_time:.2f}s")
-
     # Process each file result separately using original file names
     for file_idx, (file_infer_result, file_path) in enumerate(zip(infer_result, file_paths)):
         # Get original file name without extension
@@ -297,6 +294,9 @@ def parse_multi_file_group(file_paths, output_dir, MonkeyOCR_model, base_folder_
             file_pipe_result.dump_md(file_md_writer, f"{file_name}.md", image_dir)
             file_pipe_result.dump_content_list(file_md_writer, f"{file_name}_content_list.json", image_dir)
             file_pipe_result.dump_middle_json(file_md_writer, f'{file_name}_middle.json')
+
+    parsing_time = time.time() - start_time
+    print(f"Parsing and saving time: {parsing_time:.2f}s")
     
     print(f"All {len(infer_result)} files processed and saved in separate directories")
     
@@ -343,7 +343,7 @@ def single_task_recognition_multi_file_group(file_paths, output_dir, MonkeyOCR_m
             try:
                 # Convert PDF pages to PIL images directly
                 print(f"Converting PDF pages to images for {file_name}...")
-                images = convert_from_path(file_path, dpi=150)
+                images = pdf_to_images(file_path)
                 print(f"Converted {len(images)} pages to images")
             except Exception as e:
                 raise RuntimeError(f"Failed to convert PDF to images: {str(e)}")
@@ -438,7 +438,7 @@ def single_task_recognition(input_file, output_dir, MonkeyOCR_model, task):
         try:
             # Convert PDF pages to PIL images directly
             print("Converting PDF pages to images...")
-            images = convert_from_path(input_file, dpi=150)
+            images = pdf_to_images(input_file)
             print(f"Converted {len(images)} pages to images")
             
         except Exception as e:
@@ -545,9 +545,6 @@ def parse_file(input_file, output_dir, MonkeyOCR_model, split_pages=False, pred_
     
     infer_result = ds.apply(doc_analyze_llm, MonkeyOCR_model=MonkeyOCR_model, split_pages=split_pages, pred_abandon=pred_abandon)
     
-    parsing_time = time.time() - start_time
-    print(f"Parsing time: {parsing_time:.2f}s")
-
     # Check if infer_result is a list type
     if isinstance(infer_result, list):
         print(f"Processing {len(infer_result)} pages separately...")
@@ -599,6 +596,9 @@ def parse_file(input_file, output_dir, MonkeyOCR_model, split_pages=False, pred_
         pipe_result.dump_content_list(md_writer, f"{name_without_suff}_content_list.json", image_dir)
 
         pipe_result.dump_middle_json(md_writer, f'{name_without_suff}_middle.json')
+
+    parsing_time = time.time() - start_time
+    print(f"Parsing and saving time: {parsing_time:.2f}s")
     
     print("Results saved to ", local_md_dir)
     return local_md_dir
@@ -635,6 +635,7 @@ Usage examples:
   python parse.py input.pdf -c model_configs.yaml     # Custom model configuration
   python parse.py /path/to/folder -g 15 -s -o ./out   # Group files, split pages, custom output
   python parse.py input.pdf --pred-abandon            # Enable predicting abandon elements
+  python parse.py /path/to/folder -g 10 -m            # Group files and merge text blocks in output
         """
     )
     
@@ -674,12 +675,21 @@ Usage examples:
     )
 
     parser.add_argument(
+        "-m", "--merge-blocks",
+        action='store_true',
+        help="Merge text blocks in the output (default: False)"
+    )
+
+    parser.add_argument(
         "--pred-abandon",
         action='store_true',
         help="Enable predicting abandon elements like footer and header (default: False)"
     )
     
     args = parser.parse_args()
+
+    if args.merge_blocks:
+        os.environ["MERGE_BLOCKS"] = "1"
     
     MonkeyOCR_model = None
     

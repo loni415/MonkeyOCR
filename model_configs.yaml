@@ -5,12 +5,14 @@ weights:
   layoutreader: Relation
 models_dir: model_weight
 layout_config: 
-  model: PP-DocLayout_plus-L # PP-DocLayout_plus-L / doclayout_yolo
+  model: PP-DocLayout_plus-L # PP-DocLayout_plus-L (MonkeyOCR-pro) / doclayout_yolo (MonkeyOCR)
   reader:
     name: layoutreader
 chat_config:
   weight_path: model_weight/Recognition
   backend: lmdeploy # lmdeploy / vllm / transformers / api / lmdeploy_queue / vllm_queue
+  data_parallelism: 1 # for lmdeploy only (test)
+  model_parallelism: 1 # for lmdeploy and vllm
   batch_size: 10 # active when using `transformers` as backend
   # if using xxx_queue as backend
   queue_config:
